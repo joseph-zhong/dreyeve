@@ -1,16 +1,21 @@
 from keras.optimizers import Adam
 
 # --- GLOBAL --- #
-dreyeve_dir = '/majinbu/public/DREYEVE/DATA'
+# dreyeve_dir = '/majinbu/public/DREYEVE/DATA'
+# dreyeve_dir = '/majinbu/public/DREYEVE/DATA'
 dreyeve_train_seq = range(1, 37+1)
 dreyeve_test_seq = range(38, 74+1)
 n_sequences = 74
 total_frames_each_run = 7500
 
 # output directories
-log_dir = '/home/aba/majinbu_home/dreyeve/logs'
-ckp_dir = '/home/aba/majinbu_home/dreyeve/checkpoints'
-prd_dir = '/home/aba/majinbu_home/dreyeve/predictions'
+# log_dir = '/home/aba/majinbu_home/dreyeve/logs'
+# ckp_dir = '/home/aba/majinbu_home/dreyeve/checkpoints'
+# prd_dir = '/home/aba/majinbu_home/dreyeve/predictions'
+
+log_dir = '/home/josephz/ws/git/personal/josephz/experiments/2018/dreyeve/logs'
+ckp_dir = '/home/josephz/ws/git/personal/josephz/experiments/2018/dreyeve/checkpoints'
+prd_dir = '/home/josephz/ws/git/personal/josephz/experiments/2018/dreyeve/predictions'
 
 # --- TRAIN --- #
 batchsize = 16

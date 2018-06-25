@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Dilation models for Keras.
 
@@ -21,6 +22,36 @@ import numpy as np
 import numba
 import cv2
 
+_nameMap = {
+  'conv1_1': 'Conv_01',
+  'conv1_2': 'Conv_02',
+  'conv2_1': 'Conv_03',
+  'conv2_2': 'Conv_04',
+  'conv3_1': 'Conv_05',
+  'conv3_2': 'Conv_06',
+  'conv3_3': 'Conv_07',
+  'conv4_1': 'Conv_08',
+  'conv4_2': 'Conv_09',
+  'conv4_3': 'Conv_10',
+  'conv5_1': 'Conv_11',
+  'conv5_2': 'Conv_12',
+  'conv5_3': 'Conv_13',
+  'fc6': 'Conv_14',
+
+  'fc7': 'Conv_15',
+
+  'final': 'Conv_16',
+  'ctx_conv1_1': 'Conv_17',
+  'ctx_conv1_2': 'Conv_18',
+  'ctx_conv3_1': 'Conv_19',
+  'ctx_conv4_1': 'Conv_20',
+  'ctx_conv5_1': 'Conv_21',
+  'ctx_conv6_1': 'Conv_22',
+  'ctx_conv7_1': 'Conv_23',
+  'ctx_fc1': 'Conv_24',
+  'ctx_final': 'Conv_25',
+  'ctx_upsample': 'Conv_26',
+}
 
 def softmax(x, restore_shape=True):
     """
@@ -49,7 +80,7 @@ CONFIG = {
         'weights_url': 'http://imagelab.ing.unimore.it/files/dilation_keras/cityscapes.h5',
         'input_shape': (3, 1396, 1396),
         'test_image': 'imgs_dilation/cityscapes.png',
-        'mean_pixel': (72.39, 82.91, 73.16),
+        'mean_pixel': (72.39, 82.91, 73.16), # REVIEW josephz: This must be BGR with cv2 loading.
         'palette': np.array([[128, 64, 128],
                             [244, 35, 232],
                             [70, 70, 70],
@@ -459,10 +490,10 @@ def DilationNet(dataset, input_shape=None, apply_softmax=True, pretrained=True,
     # load weights
     if pretrained:
         if K.image_dim_ordering() == 'th':
-            weights_path = get_file(CONFIG[dataset]['weights_file'],
-                                    CONFIG[dataset]['weights_url'],
-                                    cache_subdir='models')
-
+            # weights_path = get_file(CONFIG[dataset]['weights_file'],
+            #                         CONFIG[dataset]['weights_url'],
+            #                         cache_subdir='models')
+            weights_path = 'dilation_{}.h5'.format(dataset)
             model.load_weights(weights_path)
 
             if K.backend() == 'tensorflow':
@@ -478,12 +509,16 @@ def DilationNet(dataset, input_shape=None, apply_softmax=True, pretrained=True,
         else:
             raise NotImplementedError('Pretrained DilationNet model is not available with '
                                       'tensorflow dim ordering')
-
     return model
 
-
 # predict function, mostly reported as it was in the original repo
-def predict(image, model, ds):
+def predict(image, model, ds, output=None):
+    import pdb
+    if output is not None:
+      out_layer = model.get_layer(output)
+      assert out_layer is not None
+      model = Model(inputs=model.input, outputs=out_layer.output)
+      assert model is not None
 
     image = image.astype(np.float32) - 128
     conv_margin = CONFIG[ds]['conv_margin']
@@ -514,65 +549,99 @@ def predict(image, model, ds):
             tile = cv2.copyMakeBorder(tile, margin[0], margin[1],
                                       margin[2], margin[3],
                                       cv2.BORDER_REFLECT_101)
+            # REVIEW josephz: Here is where the input is reshaped to Theano ordering.
             model_in[h*num_tiles_w+w] = tile.transpose([2, 0, 1])
 
+    #pdb.set_trace()
     prob = model.predict(model_in)
 
-    row_prediction = []
-    for h in range(num_tiles_h):
-        col_prediction = []
-        for w in range(num_tiles_w):
-            col_prediction.append(prob[h*num_tiles_w+w])
-        col_prediction = np.concatenate(col_prediction, axis=2)
-        row_prediction.append(col_prediction)
-    prob = np.concatenate(row_prediction, axis=1)
+    if output is not None:
+        return prob
+    else:
+        row_prediction = []
+        for h in range(num_tiles_h):
+            col_prediction = []
+            for w in range(num_tiles_w):
+                col_prediction.append(prob[h*num_tiles_w+w])
+            col_prediction = np.concatenate(col_prediction, axis=2)
+            row_prediction.append(col_prediction)
 
-    if CONFIG[ds]['zoom'] > 1:
-        prob = interp_map(prob, CONFIG[ds]['zoom'], image_size[1], image_size[0])
+        #pdb.set_trace()
+        prob = np.concatenate(row_prediction, axis=1)
 
-    prediction = np.argmax(prob, axis=0)
-    prediction = prediction[0:image_size[0], 0:image_size[1]]
-    color_image = CONFIG[ds]['palette'][prediction.ravel()].reshape(image_size)
+        if CONFIG[ds]['zoom'] > 1:
+            #pdb.set_trace()
+            prob = interp_map(prob, CONFIG[ds]['zoom'], image_size[1], image_size[0])
+
+        prediction = np.argmax(prob, axis=0)
+        prediction = prediction[0:image_size[0], 0:image_size[1]]
+        color_image = CONFIG[ds]['palette'][prediction.ravel()].reshape(image_size)
 
     return color_image
 
 
 # predict function, no tiles
-def predict_no_tiles(image, model, ds):
-
+def predict_no_tiles(image, model, ds, output):
     image = image.astype(np.float32) - CONFIG[ds]['mean_pixel']
     conv_margin = CONFIG[ds]['conv_margin']
 
-    input_dims = (1, 3, 1452, 2292)
-    batch_size, num_channels, input_height, input_width = input_dims
-    model_in = np.zeros(input_dims, dtype=np.float32)
+    # if input_shape is None:
+    #   # input_dims = (1, 3, 1452, 2292)
+    #   input_dims = (1, 3, 884, 1396)
+    # else:
+    #   assert isinstance(input_shape, tuple) and len(input_shape) == 3 and input_shape[0] == 3
+    #   num_channels, input_height, input_width = input_shape
+    #   output_height = input_height + 2 * conv_margin
+    #   output_width = input_width + 2 * conv_margin
+    #   input_dims = (1,) + (3, output_height, output_width)
+    # model_in = np.zeros(input_dims, dtype=np.float32)
+    model_in = np.zeros((1, 3, 1452, 2292), dtype=np.float32)
 
     image_size = image.shape
     image = cv2.copyMakeBorder(image, conv_margin, conv_margin,
                                conv_margin, conv_margin,
                                cv2.BORDER_REFLECT_101)
+    # print("saving to", '/home/josephz/ws/git/ml/framework/scripts/dilation/outs/theano/add_const')
+    # np.save('/home/josephz/ws/git/ml/framework/scripts/dilation/outs/theano/add_const', image)
+    # exit()
     model_in[0] = image.transpose([2, 0, 1])
 
     prob = model.predict(model_in)
+    import os
+    import pdb
+    out = os.path.join('/home/josephz/ws/git/ml/framework/scripts/dilation/outs/theano', output)
+    print("saving to", out)
+    # pdb.set_trace()
 
+    prob = prob.transpose([0, 2, 3, 1])
+    np.save(out, prob)
+    exit()
+
+    # REVIEW: Turn output to (b, y, x, c)
     return prob
 
-
-
 if __name__ == '__main__':
+    # ds = 'camvid'  # choose between cityscapes, kitti, camvid, voc12
+    ds = 'cityscapes'  # choose between cityscapes, kitti, camvid, voc12
 
-    ds = 'camvid'  # choose between cityscapes, kitti, camvid, voc12
+    # read and predict a image
+    im = cv2.imread(CONFIG[ds]['test_image'])
 
     # get the model
     model = DilationNet(dataset=ds)
     model.compile(optimizer='sgd', loss='categorical_crossentropy')
     model.summary()
 
-    # read and predict a image
-    im = cv2.imread(CONFIG[ds]['test_image'])
-    y_img = predict(im, model, ds)
+    # save intermediate outputs.
+    # for key in _nameMap:
+    #     y_img = predict(im, model, ds, output=key)
+    #     print("saving output from '{}'".format(key))
+    #     # np.save(key, y_img)
+    #     import pdb
+    #     #pdb.set_trace()
 
-    # plot results
+    # plot final results.
+    y_img = predict(im, model, ds, output=None)
     fig = plt.figure()
     a = fig.add_subplot(1, 2, 1)
     imgplot = plt.imshow(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
