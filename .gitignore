@@ -136,3 +136,10 @@ matlab/homography_error/*.fig
 matlab/homography_error/*.mat
 experiments/assessment/assessment_answers.txt
 
+# Virtualenv
+bin/
+include/
+local/
+pip-selfcheck.json
+share/
+
